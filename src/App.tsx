@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
@@ -7,12 +6,20 @@ import {
   ChevronDown,
   Clock3,
   MessageCircle,
+  LogOut,
   Send,
   Sparkles,
   UserRound,
   X,
 } from 'lucide-react'
 import { sendChatMessage } from './service/chatService'
+import LoginPage from './LoginPage'
+import {
+  clearAuthSession,
+  getAuthSession,
+  type AuthSession,
+  type Employee,
+} from './service/authService'
 
 type Message = {
   id: number
@@ -217,7 +224,7 @@ const suggestions = [
   },
 ]
 
-function App() {
+function ChatApp({ employee, onLogout }: { employee: Employee; onLogout: () => void }) {
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -286,7 +293,7 @@ function App() {
     <main className="min-h-screen bg-slate-50 text-slate-800">
       <header className="flex h-[76px] items-center justify-between border-b border-slate-200 bg-white px-5 md:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
             <Check size={22} strokeWidth={2.8} />
           </div>
           <div>
@@ -295,25 +302,40 @@ function App() {
           </div>
         </div>
 
-        <div className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 sm:flex">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Workspace
+        <div className="flex items-center gap-3">
+          <div className="hidden text-right sm:block">
+            <p className="text-sm font-semibold text-slate-800">{employee.full_name}</p>
+            <p className="text-xs text-slate-500">{employee.email}</p>
+          </div>
+          <div className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 sm:flex">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Workspace
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+            aria-label="Sign out"
+          >
+            <LogOut size={16} />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
         </div>
       </header>
 
       <section className="mx-auto max-w-5xl px-5 py-12 md:py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
             <Sparkles size={30} />
           </div>
 
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-600">
+          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
             Meet your AI assistant
           </p>
 
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">
             Your workday,
-            <span className="text-violet-600"> simplified.</span>
+            <span className="text-blue-600"> simplified.</span>
           </h2>
 
           <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-slate-500">
@@ -323,7 +345,7 @@ function App() {
 
           <button
             onClick={() => setIsOpen(true)}
-            className="mt-8 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-violet-200 transition hover:bg-violet-700"
+            className="mt-8 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
           >
             <MessageCircle size={18} />
             Chat with Tickora AI
@@ -352,7 +374,7 @@ function App() {
               key={item.title}
               className="rounded-2xl border border-slate-200 bg-white p-5"
             >
-              <item.icon className="mb-4 text-violet-600" size={23} />
+              <item.icon className="mb-4 text-blue-600" size={23} />
               <h3 className="font-semibold text-slate-800">{item.title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {item.description}
@@ -369,7 +391,7 @@ function App() {
         >
           <header className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-5 py-4 sm:rounded-t-2xl">
             <div className="flex items-center gap-3">
-              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-violet-600 text-white">
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
                 <Bot size={24} />
                 <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />
               </div>
@@ -393,7 +415,7 @@ function App() {
           <div className="flex-1 space-y-5 overflow-y-auto bg-slate-50/70 p-4">
             {messages.length === 0 && (
               <div className="pt-4">
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
                   <Sparkles size={21} />
                 </div>
 
@@ -414,11 +436,11 @@ function App() {
                       key={suggestion.title}
                       onClick={() => void handleSend(suggestion.question)}
                       disabled={isLoading}
-                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-violet-300 hover:bg-violet-50 disabled:opacity-50"
+                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
                     >
                       <suggestion.icon
                         size={19}
-                        className="shrink-0 text-violet-600"
+                        className="shrink-0 text-blue-600"
                       />
                       <span className="flex-1 text-sm font-medium text-slate-700">
                         {suggestion.title}
@@ -441,7 +463,7 @@ function App() {
                 }`}
               >
                 {message.role === 'assistant' && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
                     <Bot size={18} />
                   </div>
                 )}
@@ -449,7 +471,7 @@ function App() {
                 <div
                   className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-6 ${
                     message.role === 'user'
-                      ? 'rounded-br-md bg-violet-600 text-white'
+                      ? 'rounded-br-md bg-blue-600 text-white'
                       : 'rounded-bl-md border border-slate-200 bg-white text-slate-700'
                   }`}
                 >
@@ -467,7 +489,7 @@ function App() {
                       />
                       {message.data !== null && message.requestedMetric == null && (
                         <details className="mt-3 border-t border-slate-100 pt-2">
-                          <summary className="cursor-pointer text-xs font-semibold text-violet-600">
+                          <summary className="cursor-pointer text-xs font-semibold text-blue-600">
                             View raw data
                           </summary>
                           <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">
@@ -489,7 +511,7 @@ function App() {
 
             {isLoading && (
               <div className="flex items-center gap-2 text-sm text-slate-500">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
                   <Bot size={18} />
                 </div>
                 Tickora AI is thinking…
@@ -503,7 +525,7 @@ function App() {
             onSubmit={handleSubmit}
             className="shrink-0 border-t border-slate-100 bg-white p-4 sm:rounded-b-2xl"
           >
-            <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white p-2 transition focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-100">
+            <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white p-2 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -527,7 +549,7 @@ function App() {
                 type="submit"
                 disabled={!input.trim() || isLoading}
                 aria-label="Send message"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
               >
                 <Send size={17} />
               </button>
@@ -543,7 +565,7 @@ function App() {
         <button
           onClick={() => setIsOpen(true)}
           aria-label="Open Tickora AI chat"
-          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-xl shadow-violet-200 transition hover:-translate-y-1 hover:bg-violet-700"
+          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-200 transition hover:-translate-y-1 hover:bg-blue-700"
         >
           <MessageCircle size={25} />
         </button>
@@ -552,4 +574,32 @@ function App() {
   )
 }
 
-export default App
+export default function App() {
+  const [session, setSession] = useState<AuthSession | null>(() => getAuthSession())
+
+  useEffect(() => {
+    function handleUnauthorized() {
+      clearAuthSession()
+      setSession(null)
+    }
+
+    window.addEventListener('tickora:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('tickora:unauthorized', handleUnauthorized)
+  }, [])
+
+  function handleLogout() {
+    clearAuthSession()
+    setSession(null)
+  }
+
+  if (!session) {
+    return <LoginPage onLogin={setSession} />
+  }
+
+  return (
+    <ChatApp
+      employee={session.employee}
+      onLogout={handleLogout}
+    />
+  )
+}

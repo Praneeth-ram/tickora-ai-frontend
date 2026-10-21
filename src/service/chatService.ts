@@ -1,11 +1,13 @@
+import {
+  clearAuthSession,
+  getAuthToken,
+  getAuthenticatedEmployeeCode,
+} from './authService'
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
-const EMPLOYEE_CODE =
-  import.meta.env.VITE_EMPLOYEE_CODE || 'EMP001'
-
 // Keep the same ID for every message in this browser chat session.
-// The backend uses it to connect clarification replies to the original question.
 const CHAT_SESSION_ID =
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -26,16 +28,40 @@ export interface ChatResponse {
 export async function sendChatMessage(
   question: string,
 ): Promise<ChatResponse> {
+  const token = getAuthToken()
+  const employeeCode = getAuthenticatedEmployeeCode()
+
+  if (!token || !employeeCode) {
+    window.dispatchEvent(new Event('tickora:unauthorized'))
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
   const response = await fetch(
-    `${API_BASE_URL}/api/chat/${encodeURIComponent(EMPLOYEE_CODE)}`,
+    `${API_BASE_URL}/api/chat/${encodeURIComponent(employeeCode)}`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ question, session_id: CHAT_SESSION_ID }),
+      body: JSON.stringify({
+        question,
+        session_id: CHAT_SESSION_ID,
+      }),
     },
   )
+
+  if (response.status === 401) {
+    clearAuthSession()
+    window.dispatchEvent(new Event('tickora:unauthorized'))
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  if (response.status === 403) {
+    throw new Error(
+      'You are not authorized to access this employee data.',
+    )
+  }
 
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`)
