@@ -20,6 +20,7 @@ export interface ChatResponse {
   message?: string
   requested_metric?: string | null
   session_id?: string
+  show_table?: boolean
 }
 
 export async function sendChatMessage(

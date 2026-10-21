@@ -20,7 +20,8 @@ type Message = {
   content: string
   data?: unknown
   intent?: string
-  requestedMetric?: string
+  requestedMetric?: string | null
+  showTable?: boolean
 }
 
 
@@ -95,12 +96,15 @@ function StructuredResult({
   data,
   intent,
   requestedMetric,
+  showTable,
 }: {
   data: unknown
   intent?: string
-  requestedMetric?: string
+  requestedMetric?: string | null
+  showTable?: boolean
 }) {
   if (data === null || data === undefined) return null
+  if (showTable === false) return null
 
   // For scalar/count questions, the answer text is sufficient.
   // Avoid duplicating the full summary cards or records table.
@@ -254,6 +258,7 @@ function App() {
         data: result.data,
         intent: result.intent,
         requestedMetric: result.requested_metric,
+        showTable: result.show_table,
       }
 
       setMessages((previous) => [...previous, reply])
@@ -458,6 +463,7 @@ function App() {
                         data={message.data}
                         intent={message.intent}
                         requestedMetric={message.requestedMetric}
+                        showTable={message.showTable}
                       />
                       {message.data !== null && message.requestedMetric == null && (
                         <details className="mt-3 border-t border-slate-100 pt-2">
