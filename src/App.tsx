@@ -3,13 +3,14 @@ import {
   Bot,
   CalendarDays,
   Check,
+  CheckCircle2,
   Clock3,
   FileClock,
   House,
   LogOut,
   Menu,
   MessageSquare,
-  PanelLeftClose,
+  PieChart,
   Send,
   Sparkles,
   UserRound,
@@ -20,8 +21,6 @@ import LoginPage from './LoginPage'
 import {
   clearAuthSession,
   getAuthSession,
-  DISABLE_AUTH_TEMPORARILY,
-  MOCK_DEV_SESSION,
   type AuthSession,
   type Employee,
 } from './service/authService'
@@ -36,7 +35,6 @@ type Message = {
   showTable?: boolean
 }
 
-
 type DataRecord = Record<string, unknown>
 
 function isRecord(value: unknown): value is DataRecord {
@@ -50,9 +48,71 @@ function formatLabel(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-function formatValue(value: unknown): string {
+function formatDuration(minutes: number): string {
+  const hrs = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  if (hrs === 0) return `${mins}m`
+  if (mins === 0) return `${hrs}h`
+  return `${hrs}h ${mins}m`
+}
+
+function formatDateOrTime(raw: string): string {
+  // ISO date-time or YYYY-MM-DD
+  const isoDateMatch = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  )
+  if (isoDateMatch) {
+    const [, year, month, day, hours, minutes] = isoDateMatch
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ]
+    const monthName = months[parseInt(month, 10) - 1] || month
+    const dateFormatted = `${day} ${monthName} ${year}`
+    if (hours !== undefined && minutes !== undefined) {
+      const hr = parseInt(hours, 10)
+      const ampm = hr >= 12 ? 'PM' : 'AM'
+      const hr12 = hr % 12 || 12
+      return `${dateFormatted}, ${String(hr12).padStart(2, '0')}:${minutes} ${ampm}`
+    }
+    return dateFormatted
+  }
+
+  // Time format: HH:MM:SS
+  const timeMatch = raw.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/)
+  if (timeMatch) {
+    const [, hours, minutes] = timeMatch
+    const hr = parseInt(hours, 10)
+    const ampm = hr >= 12 ? 'PM' : 'AM'
+    const hr12 = hr % 12 || 12
+    return `${String(hr12).padStart(2, '0')}:${minutes} ${ampm}`
+  }
+
+  return raw
+}
+
+function formatValue(key: string, value: unknown): string {
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') {
+    if (key.toLowerCase().includes('minute')) {
+      return `${formatDuration(value)} (${value.toLocaleString()}m)`
+    }
+    return value.toLocaleString()
+  }
+  if (typeof value === 'string') {
+    return formatDateOrTime(value)
+  }
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
@@ -67,8 +127,15 @@ function findRecordArray(value: unknown, depth = 0): DataRecord[] | null {
   if (!isRecord(value)) return null
 
   const preferredKeys = [
-    'records', 'items', 'results', 'attendance', 'holidays',
-    'requests', 'timesheets', 'schedules', 'data',
+    'records',
+    'items',
+    'results',
+    'attendance',
+    'holidays',
+    'requests',
+    'timesheets',
+    'schedules',
+    'data',
   ]
   for (const key of preferredKeys) {
     if (key in value) {
@@ -86,22 +153,127 @@ function findRecordArray(value: unknown, depth = 0): DataRecord[] | null {
 }
 
 function StatusPill({ value }: { value: unknown }) {
-  const status = formatValue(value)
+  const status = String(value ?? '').trim()
   const normalized = status.toLowerCase()
-  const tone =
-    /present|approved|completed|active|accepted|clocked in/.test(normalized)
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-      : /absent|rejected|failed|cancelled|denied|error/.test(normalized)
-        ? 'bg-rose-50 text-rose-700 ring-rose-200'
-        : /pending|partial|late|in progress/.test(normalized)
-          ? 'bg-amber-50 text-amber-700 ring-amber-200'
-          : 'bg-slate-100 text-slate-700 ring-slate-200'
+
+  let tone = 'bg-slate-100 text-slate-700 ring-slate-200'
+  if (/present|approved|completed|active|accepted|clocked in|on time/.test(normalized)) {
+    tone = 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+  } else if (/absent|rejected|failed|cancelled|denied|error/.test(normalized)) {
+    tone = 'bg-rose-50 text-rose-700 ring-rose-200'
+  } else if (/pending|partial|late|in progress|submitted|draft|half/.test(normalized)) {
+    tone = 'bg-amber-50 text-amber-700 ring-amber-200'
+  } else if (/holiday|weekend|off|wfh|remote/.test(normalized)) {
+    tone = 'bg-sky-50 text-sky-700 ring-sky-200'
+  }
 
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${tone}`}>
-      {status}
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${tone}`}
+    >
+      {formatLabel(status || '—')}
     </span>
   )
+}
+
+interface AttendanceGroupItem {
+  label: string
+  count: number
+  percent: number
+  tone: 'emerald' | 'amber' | 'rose' | 'sky' | 'slate'
+}
+
+function parseGroupedAttendance(
+  data: unknown,
+): { groups: AttendanceGroupItem[]; total: number } | null {
+  if (!Array.isArray(data) || data.length === 0) return null
+
+  const isGroup = data.every((item) => {
+    if (!isRecord(item)) return false
+    const hasGroupKey =
+      'group_value' in item || 'status' in item || 'attendance_status' in item
+    const hasCountKey =
+      'record_count' in item || 'count' in item || 'total' in item
+    return hasGroupKey && hasCountKey
+  })
+
+  if (!isGroup) return null
+
+  let total = 0
+  const rawGroups: { label: string; count: number }[] = []
+
+  for (const item of data as DataRecord[]) {
+    const labelRaw = String(
+      item.group_value ?? item.status ?? item.attendance_status ?? 'Unknown',
+    )
+    const countRaw = Number(item.record_count ?? item.count ?? item.total ?? 0)
+    const count = isNaN(countRaw) ? 0 : countRaw
+    total += count
+    rawGroups.push({
+      label: formatLabel(labelRaw),
+      count,
+    })
+  }
+
+  if (total === 0 && rawGroups.length === 0) return null
+
+  const groups: AttendanceGroupItem[] = rawGroups.map((g) => {
+    const lower = g.label.toLowerCase()
+    let tone: AttendanceGroupItem['tone'] = 'slate'
+    if (/present|completed|clocked in|on time/.test(lower)) tone = 'emerald'
+    else if (/late|partial|half/.test(lower)) tone = 'amber'
+    else if (/absent|missed|rejected/.test(lower)) tone = 'rose'
+    else if (/leave|wfh|remote|holiday/.test(lower)) tone = 'sky'
+
+    const percent = total > 0 ? Math.round((g.count / total) * 100) : 0
+    return {
+      label: g.label,
+      count: g.count,
+      percent,
+      tone,
+    }
+  })
+
+  return { groups, total }
+}
+
+function parseAggregateResult(
+  data: unknown,
+): { title: string; main: string; subtitle?: string } | null {
+  if (!isRecord(data)) return null
+
+  // Worked minutes sum: {"field": "worked_minutes", "total": 9600}
+  if ('field' in data && 'total' in data && typeof data.total === 'number') {
+    const fieldName = formatLabel(String(data.field))
+    if (String(data.field).toLowerCase().includes('minute')) {
+      const duration = formatDuration(data.total)
+      return {
+        title: `Total ${fieldName}`,
+        main: duration,
+        subtitle: `${data.total.toLocaleString()} total minutes recorded`,
+      }
+    }
+    return {
+      title: `Total ${fieldName}`,
+      main: data.total.toLocaleString(),
+      subtitle: `Sum across matching records`,
+    }
+  }
+
+  // Count response: {"count": 14}
+  if (
+    'count' in data &&
+    typeof data.count === 'number' &&
+    Object.keys(data).length <= 2
+  ) {
+    return {
+      title: 'Total Matching Records',
+      main: data.count.toLocaleString(),
+      subtitle: 'record(s) found in database',
+    }
+  }
+
+  return null
 }
 
 function StructuredResult({
@@ -116,31 +288,227 @@ function StructuredResult({
   showTable?: boolean
 }) {
   if (data === null || data === undefined) return null
-  if (showTable === false) return null
 
-  // For scalar/count questions, the answer text is sufficient.
-  // Avoid duplicating the full summary cards or records table.
-  if (requestedMetric) return null
+  // 1. Grouped Attendance Breakdown (e.g., 14 present, 2 late, 16 total)
+  const groupedAttendance = parseGroupedAttendance(data)
+  if (groupedAttendance) {
+    const { groups, total } = groupedAttendance
 
-  const records = findRecordArray(data)
-  if (records && records.length > 0) {
-    const columns = Array.from(
-      new Set(records.flatMap((record) => Object.keys(record))),
-    ).filter((key) => !['employee_id', 'attendance_id'].includes(key.toLowerCase()))
+    const toneStyles = {
+      emerald: {
+        border: 'border-emerald-200 bg-emerald-50/70 text-emerald-900',
+        badge: 'bg-emerald-100 text-emerald-800',
+        bar: 'bg-emerald-500',
+      },
+      amber: {
+        border: 'border-amber-200 bg-amber-50/70 text-amber-900',
+        badge: 'bg-amber-100 text-amber-800',
+        bar: 'bg-amber-500',
+      },
+      rose: {
+        border: 'border-rose-200 bg-rose-50/70 text-rose-900',
+        badge: 'bg-rose-100 text-rose-800',
+        bar: 'bg-rose-500',
+      },
+      sky: {
+        border: 'border-sky-200 bg-sky-50/70 text-sky-900',
+        badge: 'bg-sky-100 text-sky-800',
+        bar: 'bg-sky-500',
+      },
+      slate: {
+        border: 'border-slate-200 bg-slate-50 text-slate-800',
+        badge: 'bg-slate-200 text-slate-700',
+        bar: 'bg-slate-400',
+      },
+    }
 
     return (
-      <div className="mt-3 max-w-full overflow-hidden rounded-xl border border-slate-200">
-        <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <PieChart size={15} />
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+              Attendance Summary
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+            <CheckCircle2 size={13} />
+            {total} Total Records
+          </span>
+        </div>
+
+        {/* Group summary cards */}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {groups.map((group) => {
+            const styles = toneStyles[group.tone]
+            return (
+              <div
+                key={group.label}
+                className={`rounded-xl border p-3 ${styles.border}`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium opacity-80">
+                    {group.label}
+                  </p>
+                  <span
+                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${styles.badge}`}
+                  >
+                    {group.percent}%
+                  </span>
+                </div>
+                <p className="mt-1.5 text-2xl font-bold tracking-tight">
+                  {group.count}
+                </p>
+              </div>
+            )
+          })}
+
+          <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-blue-900">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-blue-700">Total</p>
+              <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800">
+                100%
+              </span>
+            </div>
+            <p className="mt-1.5 text-2xl font-bold tracking-tight text-blue-950">
+              {total}
+            </p>
+          </div>
+        </div>
+
+        {/* Visual progress distribution bar */}
+        {total > 0 && (
+          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            {groups.map((group) => (
+              <div
+                key={group.label}
+                style={{ width: `${group.percent}%` }}
+                title={`${group.label}: ${group.count} (${group.percent}%)`}
+                className={toneStyles[group.tone].bar}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // 2. Aggregate Results (e.g. worked minutes sum, total counts)
+  const aggregate = parseAggregateResult(data)
+  if (aggregate) {
+    return (
+      <div className="mt-3 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/70 to-white p-4 shadow-xs">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+            <Clock3 size={17} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-600">
+              {aggregate.title}
+            </p>
+            <p className="text-2xl font-extrabold tracking-tight text-slate-900">
+              {aggregate.main}
+            </p>
+          </div>
+        </div>
+        {aggregate.subtitle && (
+          <p className="mt-2 text-xs text-slate-500">{aggregate.subtitle}</p>
+        )}
+      </div>
+    )
+  }
+
+  if (showTable === false || requestedMetric) return null
+
+  // 3. Table Records (Attendance, Leave, WFH, Timesheet, Holidays)
+  const records = findRecordArray(data)
+
+  if (records && records.length === 0) {
+    return (
+      <div className="mt-3 flex items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 p-3.5 text-slate-500">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+          <CalendarDays size={18} />
+        </div>
+        <div>
           <p className="text-xs font-semibold text-slate-700">
-            {formatLabel(intent || 'results')} <span className="font-normal text-slate-500">· {records.length} {records.length === 1 ? 'record' : 'records'}</span>
+            No records found
+          </p>
+          <p className="text-[11px] text-slate-400">
+            No records matched this query or date range.
           </p>
         </div>
+      </div>
+    )
+  }
+
+  if (records && records.length > 0) {
+    const HIDDEN_COLUMNS = new Set([
+      'id',
+      'employee_id',
+      'attendance_id',
+      'leave_request_id',
+      'wfh_request_id',
+      'timesheet_id',
+      'created_at',
+      'updated_at',
+    ])
+
+    const allKeys = Array.from(new Set(records.flatMap((r) => Object.keys(r))))
+    const columns = allKeys.filter((k) => !HIDDEN_COLUMNS.has(k.toLowerCase()))
+
+    const priorityKeys = [
+      'work_date',
+      'attendance_date',
+      'date',
+      'holiday_date',
+      'period_start',
+      'period_end',
+      'start_date',
+      'end_date',
+      'leave_type',
+      'holiday_name',
+      'name',
+      'status',
+      'submission_status',
+      'check_in_at',
+      'check_in',
+      'check_out_at',
+      'check_out',
+      'worked_minutes',
+      'total_hours',
+      'reason',
+      'applied_at',
+      'requested_at',
+      'region',
+    ]
+
+    columns.sort((a, b) => {
+      const idxA = priorityKeys.indexOf(a.toLowerCase())
+      const idxB = priorityKeys.indexOf(b.toLowerCase())
+      return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB)
+    })
+
+    return (
+      <div className="mt-3 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3.5 py-2.5">
+          <p className="text-xs font-semibold text-slate-800">
+            {formatLabel(intent || 'records')}
+          </p>
+          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+            {records.length} {records.length === 1 ? 'record' : 'records'}
+          </span>
+        </div>
         <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[440px] border-collapse text-left text-xs">
-            <thead className="bg-white text-slate-500">
+          <table className="w-full min-w-[460px] border-collapse text-left text-xs">
+            <thead className="bg-slate-50/50 text-slate-500">
               <tr>
                 {columns.map((column) => (
-                  <th key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2 font-semibold">
+                  <th
+                    key={column}
+                    className="whitespace-nowrap border-b border-slate-200 px-3.5 py-2 font-semibold text-slate-600"
+                  >
                     {formatLabel(column)}
                   </th>
                 ))}
@@ -148,13 +516,30 @@ function StructuredResult({
             </thead>
             <tbody>
               {records.map((record, rowIndex) => (
-                <tr key={String(record.id ?? record.attendance_id ?? record.leave_request_id ?? rowIndex)} className="odd:bg-white even:bg-slate-50/70">
+                <tr
+                  key={String(
+                    record.id ??
+                      record.attendance_id ??
+                      record.leave_request_id ??
+                      rowIndex,
+                  )}
+                  className="transition hover:bg-slate-50/60 odd:bg-white even:bg-slate-50/40"
+                >
                   {columns.map((column) => {
                     const value = record[column]
-                    const isStatus = /status|state|approval/i.test(column)
+                    const isStatus =
+                      /status|state|approval/i.test(column) &&
+                      typeof value === 'string'
                     return (
-                      <td key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5 text-slate-700 last:border-b-0">
-                        {isStatus ? <StatusPill value={value} /> : formatValue(value)}
+                      <td
+                        key={column}
+                        className="whitespace-nowrap border-b border-slate-100 px-3.5 py-2.5 text-slate-700 last:border-b-0"
+                      >
+                        {isStatus ? (
+                          <StatusPill value={value} />
+                        ) : (
+                          formatValue(column, value)
+                        )}
                       </td>
                     )
                   })}
@@ -167,31 +552,34 @@ function StructuredResult({
     )
   }
 
-  if (records && records.length === 0) {
-    return (
-      <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
-        No records to display.
-      </div>
-    )
-  }
-
+  // 4. Key-value stats cards
   if (isRecord(data)) {
     const entries = Object.entries(data).filter(
       ([key, value]) =>
-        !['answer', 'message', 'success', 'intent', 'confidence'].includes(key.toLowerCase()) &&
+        ![
+          'answer',
+          'message',
+          'success',
+          'intent',
+          'confidence',
+          'raw_data',
+        ].includes(key.toLowerCase()) &&
         (typeof value !== 'object' || value === null),
     )
 
     if (entries.length > 0) {
       return (
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {entries.map(([key, value]) => (
-            <div key={key} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div
+              key={key}
+              className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3"
+            >
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
                 {formatLabel(key)}
               </p>
               <p className="mt-1 break-words text-sm font-semibold text-slate-800">
-                {formatValue(value)}
+                {formatValue(key, value)}
               </p>
             </div>
           ))}
@@ -200,35 +588,8 @@ function StructuredResult({
     }
   }
 
-  if (Array.isArray(data) && data.length === 0) {
-    return (
-      <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
-        No records to display.
-      </div>
-    )
-  }
-
   return null
 }
-
-const suggestions = [
-  {
-    icon: Clock3,
-    title: 'My attendance',
-    question: 'Show my attendance records for October 2026',
-  },
-  {
-    icon: CalendarDays,
-    title: 'Leave requests',
-    question: 'Show my leave request status',
-  },
-  {
-    icon: Check,
-    title: 'Attendance summary',
-    question: 'Give me my attendance summary for this month',
-  },
-]
-
 
 function ChatApp({
   employee,
@@ -262,7 +623,8 @@ function ChatApp({
     setIsLoading(true)
 
     try {
-      const result = await sendChatMessage(text)
+      // Use logged in employee's actual employee_code
+      const result = await sendChatMessage(text, employee.employee_code)
 
       const reply: Message = {
         id: Date.now() + 1,
@@ -273,7 +635,7 @@ function ChatApp({
           (result.success
             ? 'Your request was processed.'
             : 'I could not process that request.'),
-        data: result.data,
+        data: result.data ?? result.raw_data,
         intent: result.intent,
         requestedMetric: result.requested_metric,
         showTable: result.show_table,
@@ -320,6 +682,7 @@ function ChatApp({
         />
       )}
 
+      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-slate-200 bg-slate-50 transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -400,6 +763,7 @@ function ChatApp({
           ))}
         </nav>
 
+        {/* User profile footer */}
         <div className="border-t border-slate-200 p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
@@ -415,7 +779,7 @@ function ChatApp({
                 {employee.full_name}
               </p>
               <p className="truncate text-xs text-slate-500">
-                {employee.email}
+                {employee.employee_code} · {employee.email}
               </p>
             </div>
             <button
@@ -431,6 +795,7 @@ function ChatApp({
         </div>
       </aside>
 
+      {/* Main chat section */}
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -447,7 +812,7 @@ function ChatApp({
                 AI Assistant
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Your personal workday assistant
+                Logged in as {employee.full_name} ({employee.employee_code})
               </p>
             </div>
           </div>
@@ -455,7 +820,7 @@ function ChatApp({
           <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             <span className="text-xs font-medium text-emerald-700">
-              Workspace
+              Online
             </span>
           </div>
         </header>
@@ -476,8 +841,8 @@ function ChatApp({
                     How can I help you today?
                   </h1>
                   <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500 sm:text-base">
-                    Ask a question about your attendance, working hours, leave
-                    requests, holidays or work schedule.
+                    Ask questions about your attendance records, leave requests,
+                    working hours, timesheets, or holidays.
                   </p>
 
                   <div className="mt-9 grid gap-3 sm:grid-cols-2">
@@ -491,7 +856,7 @@ function ChatApp({
                       {
                         icon: Check,
                         title: 'Attendance summary',
-                        description: 'See your attendance totals',
+                        description: 'See your attendance breakdown',
                         question:
                           'Give me my attendance summary for this month',
                       },
@@ -504,7 +869,7 @@ function ChatApp({
                       {
                         icon: FileClock,
                         title: 'Working hours',
-                        description: 'Review your timesheets',
+                        description: 'Review your timesheet records',
                         question: 'Show my timesheets for this month',
                       },
                     ].map(({ icon: Icon, title, description, question }) => (
@@ -608,11 +973,9 @@ function ChatApp({
             </div>
           </div>
 
+          {/* Chat input form */}
           <div className="shrink-0 border-t border-slate-200 bg-white px-4 pb-4 pt-3 sm:px-8">
-            <form
-              onSubmit={handleSubmit}
-              className="mx-auto max-w-4xl"
-            >
+            <form onSubmit={handleSubmit} className="mx-auto max-w-4xl">
               <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm transition focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-50">
                 <textarea
                   value={input}
@@ -627,7 +990,7 @@ function ChatApp({
                       void handleSend()
                     }
                   }}
-                  placeholder="Ask Tickora about your workday..."
+                  placeholder="Ask Tickora about your attendance, leaves, or timesheets..."
                   rows={1}
                   disabled={isLoading}
                   aria-label="Your message"
@@ -654,31 +1017,41 @@ function ChatApp({
 }
 
 export default function App() {
-  const [session, setSession] = useState<AuthSession | null>(() => getAuthSession())
+  const [session, setSession] = useState<AuthSession | null>(() =>
+    getAuthSession(),
+  )
+  const [noticeMessage, setNoticeMessage] = useState<string>('')
 
   useEffect(() => {
     function handleUnauthorized() {
-      if (DISABLE_AUTH_TEMPORARILY) return
       clearAuthSession()
       setSession(null)
+      setNoticeMessage('Your session has expired. Please sign in again.')
     }
 
     window.addEventListener('tickora:unauthorized', handleUnauthorized)
-    return () => window.removeEventListener('tickora:unauthorized', handleUnauthorized)
+    return () =>
+      window.removeEventListener('tickora:unauthorized', handleUnauthorized)
   }, [])
 
   function handleLogout() {
     clearAuthSession()
-    setSession(DISABLE_AUTH_TEMPORARILY ? MOCK_DEV_SESSION : null)
+    setSession(null)
+    setNoticeMessage('')
   }
 
-  if (!session && !DISABLE_AUTH_TEMPORARILY) {
-    return <LoginPage onLogin={setSession} />
+  function handleLogin(newSession: AuthSession) {
+    setSession(newSession)
+    setNoticeMessage('')
+  }
+
+  if (!session) {
+    return <LoginPage onLogin={handleLogin} noticeMessage={noticeMessage} />
   }
 
   return (
     <ChatApp
-      employee={session?.employee ?? MOCK_DEV_SESSION.employee}
+      employee={session.employee}
       onLogout={handleLogout}
     />
   )

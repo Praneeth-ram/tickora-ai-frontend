@@ -4,18 +4,21 @@ import { loginWithEmail, type AuthSession } from './service/authService'
 
 type LoginPageProps = {
   onLogin: (session: AuthSession) => void
+  noticeMessage?: string
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({ onLogin, noticeMessage }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState(noticeMessage || '')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+    setNotice('')
     setIsLoading(true)
 
     try {
@@ -129,6 +132,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </button>
             </div>
           </div>
+
+          {notice && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800"
+            >
+              {notice}
+            </div>
+          )}
 
           {error && (
             <div
