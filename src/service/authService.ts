@@ -12,12 +12,30 @@ export interface AuthSession {
   employee: Employee
 }
 
+// Temporary toggle: set to false to re-enable authentication requirements
+export const DISABLE_AUTH_TEMPORARILY = true
+
+export const MOCK_DEV_SESSION: AuthSession = {
+  access_token: 'dev-preview-token',
+  token_type: 'bearer',
+  employee: {
+    employee_id: 1,
+    employee_code: 'EMP-001',
+    full_name: 'Demo User',
+    email: 'demo.user@tickora.ai',
+  },
+}
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 const SESSION_KEY = 'tickora_auth_session'
 
 export function getAuthSession(): AuthSession | null {
+  if (DISABLE_AUTH_TEMPORARILY) {
+    return MOCK_DEV_SESSION
+  }
+
   const raw = sessionStorage.getItem(SESSION_KEY)
 
   if (!raw) return null

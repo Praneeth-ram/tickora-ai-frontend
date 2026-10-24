@@ -3,10 +3,13 @@ import {
   Bot,
   CalendarDays,
   Check,
-  ChevronDown,
   Clock3,
-  MessageCircle,
+  FileClock,
+  House,
   LogOut,
+  Menu,
+  MessageSquare,
+  PanelLeftClose,
   Send,
   Sparkles,
   UserRound,
@@ -17,6 +20,8 @@ import LoginPage from './LoginPage'
 import {
   clearAuthSession,
   getAuthSession,
+  DISABLE_AUTH_TEMPORARILY,
+  MOCK_DEV_SESSION,
   type AuthSession,
   type Employee,
 } from './service/authService'
@@ -224,11 +229,18 @@ const suggestions = [
   },
 ]
 
-function ChatApp({ employee, onLogout }: { employee: Employee; onLogout: () => void }) {
-  const [isOpen, setIsOpen] = useState(false)
+
+function ChatApp({
+  employee,
+  onLogout,
+}: {
+  employee: Employee
+  onLogout: () => void
+}) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const messageEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -237,7 +249,6 @@ function ChatApp({ employee, onLogout }: { employee: Employee; onLogout: () => v
 
   async function handleSend(question?: string) {
     const text = (question ?? input).trim()
-
     if (!text || isLoading) return
 
     const userMessage: Message = {
@@ -269,14 +280,16 @@ function ChatApp({ employee, onLogout }: { employee: Employee; onLogout: () => v
       }
 
       setMessages((previous) => [...previous, reply])
-    } catch {
+    } catch (error) {
       setMessages((previous) => [
         ...previous,
         {
           id: Date.now() + 1,
           role: 'assistant',
           content:
-            'I couldn’t connect to Tickora AI. Please check that the backend is running and try again.',
+            error instanceof Error
+              ? error.message
+              : 'I couldn’t connect to Tickora AI. Please try again.',
         },
       ])
     } finally {
@@ -289,287 +302,353 @@ function ChatApp({ employee, onLogout }: { employee: Employee; onLogout: () => v
     void handleSend()
   }
 
+  function startNewChat() {
+    if (isLoading) return
+    setMessages([])
+    setInput('')
+    setSidebarOpen(false)
+  }
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="flex h-[76px] items-center justify-between border-b border-slate-200 bg-white px-5 md:px-10">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <Check size={22} strokeWidth={2.8} />
+    <main className="flex h-dvh min-h-[560px] overflow-hidden bg-white text-slate-800">
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/30 md:hidden"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-slate-200 bg-slate-50 transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex h-[76px] items-center gap-3 px-5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+            <Check size={23} strokeWidth={2.7} />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight">tickora</h1>
-            <p className="text-xs text-slate-500">Attendance management</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-semibold text-slate-800">{employee.full_name}</p>
-            <p className="text-xs text-slate-500">{employee.email}</p>
-          </div>
-          <div className="hidden items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 sm:flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Workspace
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">
+              tickora
+            </h1>
+            <p className="text-xs text-slate-500">Employee workspace</p>
           </div>
           <button
             type="button"
-            onClick={onLogout}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-            aria-label="Sign out"
+            onClick={() => setSidebarOpen(false)}
+            className="ml-auto rounded-lg p-2 text-slate-500 hover:bg-slate-200 md:hidden"
+            aria-label="Close sidebar"
           >
-            <LogOut size={16} />
-            <span className="hidden sm:inline">Sign out</span>
+            <X size={18} />
           </button>
         </div>
-      </header>
 
-      <section className="mx-auto max-w-5xl px-5 py-12 md:py-20">
-        <div className="mx-auto max-w-2xl text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-            <Sparkles size={30} />
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={startNewChat}
+            disabled={isLoading}
+            className="flex w-full items-center gap-2.5 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
+          >
+            <MessageSquare size={17} />
+            New conversation
+          </button>
+        </div>
+
+        <nav className="flex-1 space-y-1 px-3 py-6">
+          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Workspace
+          </p>
+
+          <div className="flex items-center gap-3 rounded-xl bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700">
+            <Sparkles size={18} />
+            AI Assistant
           </div>
 
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
-            Meet your AI assistant
+          <p className="px-3 pb-2 pt-7 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Ask Tickora
           </p>
 
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-5xl">
-            Your workday,
-            <span className="text-blue-600"> simplified.</span>
-          </h2>
-
-          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-slate-500">
-            Ask questions about your attendance, timesheets, leave requests,
-            holidays and work schedule — all in one place.
-          </p>
-
-          <button
-            onClick={() => setIsOpen(true)}
-            className="mt-8 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
-          >
-            <MessageCircle size={18} />
-            Chat with Tickora AI
-          </button>
-        </div>
-
-        <div className="mx-auto mt-16 grid max-w-3xl gap-4 sm:grid-cols-3">
           {[
-            {
-              icon: Clock3,
-              title: 'Attendance',
-              description: 'Review clock-ins, clock-outs and attendance history.',
-            },
-            {
-              icon: CalendarDays,
-              title: 'Leave & holidays',
-              description: 'Check leave request statuses and upcoming holidays.',
-            },
-            {
-              icon: Check,
-              title: 'Work insights',
-              description: 'Get summaries of your work records and schedules.',
-            },
-          ].map((item) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-slate-200 bg-white p-5"
+            { icon: Clock3, label: 'Attendance' },
+            { icon: CalendarDays, label: 'Leave & holidays' },
+            { icon: FileClock, label: 'Timesheets' },
+            { icon: House, label: 'Work from home' },
+          ].map(({ icon: Icon, label }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                setSidebarOpen(false)
+                setInput(
+                  label === 'Attendance'
+                    ? 'Show my attendance records for this month'
+                    : label === 'Leave & holidays'
+                      ? 'Show my leave request status and upcoming holidays'
+                      : label === 'Timesheets'
+                        ? 'Show my timesheets for this month'
+                        : 'Show my work from home request status',
+                )
+              }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white hover:text-slate-900"
             >
-              <item.icon className="mb-4 text-blue-600" size={23} />
-              <h3 className="font-semibold text-slate-800">{item.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                {item.description}
+              <Icon size={18} className="text-slate-500" />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="border-t border-slate-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+              {(employee.full_name || 'E')
+                .split(' ')
+                .map((part) => part[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-800">
+                {employee.full_name}
+              </p>
+              <p className="truncate text-xs text-slate-500">
+                {employee.email}
               </p>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {isOpen && (
-        <section
-          aria-label="Tickora AI chat"
-          className="fixed inset-0 z-50 flex flex-col bg-white shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(700px,calc(100dvh-130px))] sm:w-[420px] sm:rounded-2xl sm:border sm:border-slate-200"
-        >
-          <header className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-5 py-4 sm:rounded-t-2xl">
-            <div className="flex items-center gap-3">
-              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
-                <Bot size={24} />
-                <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />
-              </div>
-              <div>
-                <h2 className="font-bold text-slate-900">Tickora AI</h2>
-                <p className="mt-0.5 text-xs text-emerald-600">
-                  Your work assistant
-                </p>
-              </div>
-            </div>
-
             <button
-              onClick={() => setIsOpen(false)}
-              aria-label="Close chat"
-              className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100"
+              type="button"
+              onClick={onLogout}
+              aria-label="Sign out"
+              title="Sign out"
+              className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
             >
-              <X size={20} />
+              <LogOut size={17} />
             </button>
-          </header>
+          </div>
+        </div>
+      </aside>
 
-          <div className="flex-1 space-y-5 overflow-y-auto bg-slate-50/70 p-4">
-            {messages.length === 0 && (
-              <div className="pt-4">
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
-                  <Sparkles size={21} />
-                </div>
-
-                <h3 className="text-xl font-bold text-slate-900">
-                  Hi there! 👋
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  What would you like to know about your workday?
-                </p>
-
-                <p className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Try asking
-                </p>
-
-                <div className="space-y-2">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.title}
-                      onClick={() => void handleSend(suggestion.question)}
-                      disabled={isLoading}
-                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
-                    >
-                      <suggestion.icon
-                        size={19}
-                        className="shrink-0 text-blue-600"
-                      />
-                      <span className="flex-1 text-sm font-medium text-slate-700">
-                        {suggestion.title}
-                      </span>
-                      <ChevronDown
-                        size={15}
-                        className="-rotate-90 text-slate-400"
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex gap-2.5 ${
-                  message.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                {message.role === 'assistant' && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                    <Bot size={18} />
-                  </div>
-                )}
-
-                <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-6 ${
-                    message.role === 'user'
-                      ? 'rounded-br-md bg-blue-600 text-white'
-                      : 'rounded-bl-md border border-slate-200 bg-white text-slate-700'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap break-words">
-                    {message.content}
-                  </p>
-
-                  {message.role === 'assistant' && message.data !== undefined && (
-                    <>
-                      <StructuredResult
-                        data={message.data}
-                        intent={message.intent}
-                        requestedMetric={message.requestedMetric}
-                        showTable={message.showTable}
-                      />
-                      {message.data !== null && message.requestedMetric == null && (
-                        <details className="mt-3 border-t border-slate-100 pt-2">
-                          <summary className="cursor-pointer text-xs font-semibold text-blue-600">
-                            View raw data
-                          </summary>
-                          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">
-                            {JSON.stringify(message.data, null, 2)}
-                          </pre>
-                        </details>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {message.role === 'user' && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-slate-600">
-                    <UserRound size={17} />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {isLoading && (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                  <Bot size={18} />
-                </div>
-                Tickora AI is thinking…
-              </div>
-            )}
-
-            <div ref={messageEndRef} />
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
+              aria-label="Open navigation"
+            >
+              <Menu size={21} />
+            </button>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                AI Assistant
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Your personal workday assistant
+              </p>
+            </div>
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="shrink-0 border-t border-slate-100 bg-white p-4 sm:rounded-b-2xl"
-          >
-            <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white p-2 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
-              <textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault()
-                    void handleSend()
-                  }
-                }}
-                placeholder="Ask about your workday..."
-                rows={1}
-                disabled={isLoading}
-                aria-label="Your message"
-                className="max-h-28 min-h-10 flex-1 resize-y bg-transparent px-2 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60"
-              />
-              <button
-                type="submit"
-                disabled={!input.trim() || isLoading}
-                aria-label="Send message"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-            <p className="mt-2 text-center text-[11px] text-slate-400">
-              Tickora AI · Attendance information assistant
-            </p>
-          </form>
-        </section>
-      )}
+          <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-medium text-emerald-700">
+              Workspace
+            </span>
+          </div>
+        </header>
 
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          aria-label="Open Tickora AI chat"
-          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-200 transition hover:-translate-y-1 hover:bg-blue-700"
-        >
-          <MessageCircle size={25} />
-        </button>
-      )}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 md:px-12">
+            <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col">
+              {messages.length === 0 ? (
+                <div className="flex flex-1 flex-col justify-center py-8">
+                  <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                    <Sparkles size={27} />
+                  </div>
+
+                  <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                    Tickora AI
+                  </p>
+                  <h1 className="mt-3 text-center text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+                    How can I help you today?
+                  </h1>
+                  <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500 sm:text-base">
+                    Ask a question about your attendance, working hours, leave
+                    requests, holidays or work schedule.
+                  </p>
+
+                  <div className="mt-9 grid gap-3 sm:grid-cols-2">
+                    {[
+                      {
+                        icon: Clock3,
+                        title: 'My attendance',
+                        description: 'Review your attendance records',
+                        question: 'Show my attendance records for October 2026',
+                      },
+                      {
+                        icon: Check,
+                        title: 'Attendance summary',
+                        description: 'See your attendance totals',
+                        question:
+                          'Give me my attendance summary for this month',
+                      },
+                      {
+                        icon: CalendarDays,
+                        title: 'Leave requests',
+                        description: 'Check your request status',
+                        question: 'Show my leave request status',
+                      },
+                      {
+                        icon: FileClock,
+                        title: 'Working hours',
+                        description: 'Review your timesheets',
+                        question: 'Show my timesheets for this month',
+                      },
+                    ].map(({ icon: Icon, title, description, question }) => (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => void handleSend(question)}
+                        disabled={isLoading}
+                        className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 disabled:opacity-50"
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-blue-100 group-hover:text-blue-700">
+                          <Icon size={19} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-slate-800">
+                            {title}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-500">
+                            {description}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-7 pb-6">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex gap-3 ${
+                        message.role === 'user'
+                          ? 'justify-end'
+                          : 'justify-start'
+                      }`}
+                    >
+                      {message.role === 'assistant' && (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                          <Bot size={19} />
+                        </div>
+                      )}
+
+                      <div
+                        className={`min-w-0 max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 sm:max-w-[85%] ${
+                          message.role === 'user'
+                            ? 'rounded-br-md bg-blue-600 text-white'
+                            : 'rounded-bl-md border border-slate-200 bg-white text-slate-700 shadow-sm'
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap break-words">
+                          {message.content}
+                        </p>
+
+                        {message.role === 'assistant' &&
+                          message.data !== undefined && (
+                            <>
+                              <StructuredResult
+                                data={message.data}
+                                intent={message.intent}
+                                requestedMetric={message.requestedMetric}
+                                showTable={message.showTable}
+                              />
+                              {message.data !== null &&
+                                message.requestedMetric == null && (
+                                  <details className="mt-3 border-t border-slate-100 pt-2">
+                                    <summary className="cursor-pointer text-xs font-semibold text-blue-600">
+                                      View raw data
+                                    </summary>
+                                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600">
+                                      {JSON.stringify(message.data, null, 2)}
+                                    </pre>
+                                  </details>
+                                )}
+                            </>
+                          )}
+                      </div>
+
+                      {message.role === 'user' && (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                          <UserRound size={18} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {isLoading && (
+                    <div
+                      className="flex items-center gap-3 text-sm text-slate-500"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                        <Bot size={19} />
+                      </div>
+                      Tickora AI is thinking…
+                    </div>
+                  )}
+                  <div ref={messageEndRef} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-slate-200 bg-white px-4 pb-4 pt-3 sm:px-8">
+            <form
+              onSubmit={handleSubmit}
+              className="mx-auto max-w-4xl"
+            >
+              <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm transition focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-50">
+                <textarea
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault()
+                      void handleSend()
+                    }
+                  }}
+                  placeholder="Ask Tickora about your workday..."
+                  rows={1}
+                  disabled={isLoading}
+                  aria-label="Your message"
+                  className="max-h-32 min-h-11 min-w-0 flex-1 resize-y bg-transparent px-3 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={!input.trim() || isLoading}
+                  aria-label="Send message"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+              <p className="mt-2 text-center text-[11px] text-slate-400">
+                Tickora AI uses your authorized work records to answer questions.
+              </p>
+            </form>
+          </div>
+        </div>
+      </section>
     </main>
   )
 }
@@ -579,6 +658,7 @@ export default function App() {
 
   useEffect(() => {
     function handleUnauthorized() {
+      if (DISABLE_AUTH_TEMPORARILY) return
       clearAuthSession()
       setSession(null)
     }
@@ -589,16 +669,16 @@ export default function App() {
 
   function handleLogout() {
     clearAuthSession()
-    setSession(null)
+    setSession(DISABLE_AUTH_TEMPORARILY ? MOCK_DEV_SESSION : null)
   }
 
-  if (!session) {
+  if (!session && !DISABLE_AUTH_TEMPORARILY) {
     return <LoginPage onLogin={setSession} />
   }
 
   return (
     <ChatApp
-      employee={session.employee}
+      employee={session?.employee ?? MOCK_DEV_SESSION.employee}
       onLogout={handleLogout}
     />
   )
