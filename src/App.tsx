@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
   CalendarDays,
+  Banknote,
   Check,
   CheckCircle2,
   Clock3,
   FileClock,
   House,
   LogOut,
+  ClipboardList,
   Menu,
   MessageSquare,
+  Palmtree,
+  ReceiptText,
   PieChart,
   Send,
   Sparkles,
@@ -47,6 +51,28 @@ function formatLabel(value: string): string {
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
+
+
+function getPersonalizedGreeting(fullName: string): {
+  firstName: string
+  greeting: string
+} {
+  const firstName = fullName.trim().split(/\s+/)[0] || 'there'
+  const hour = new Date().getHours()
+
+  let greeting = 'Hello'
+
+  if (hour >= 5 && hour < 12) {
+    greeting = 'Good morning'
+  } else if (hour >= 12 && hour < 17) {
+    greeting = 'Good afternoon'
+  } else if (hour >= 17 && hour < 21) {
+    greeting = 'Good evening'
+  }
+
+  return { firstName, greeting }
+}
+
 
 function formatDuration(minutes: number): string {
   const hrs = Math.floor(minutes / 60)
@@ -134,7 +160,14 @@ function findRecordArray(value: unknown, depth = 0): DataRecord[] | null {
     'holidays',
     'requests',
     'timesheets',
+    'payroll',
+    'payroll_records',
+    'payroll_summaries',
     'schedules',
+    'tasks',  
+    'task_records',
+    'loan_requests',         
+    'loan_request_records',
     'data',
   ]
   for (const key of preferredKeys) {
@@ -397,6 +430,9 @@ function StructuredResult({
 
   // 2. Aggregate Results (e.g. worked minutes sum, total counts)
   const aggregate = parseAggregateResult(data)
+  if (aggregate && intent === 'loan_lookup') {
+    return null
+  }
   if (aggregate) {
     return (
       <div className="mt-3 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/70 to-white p-4 shadow-xs">
@@ -451,20 +487,34 @@ function StructuredResult({
       'leave_request_id',
       'wfh_request_id',
       'timesheet_id',
+      'payroll_id',
+      'payroll_summary_id',
+      'payroll_period_id',
+      'assigned_to_employee_id',
+      'managed_by_employee_id',
       'created_at',
       'updated_at',
+      'project_id',
+      'loan_request_id',
     ])
 
     const allKeys = Array.from(new Set(records.flatMap((r) => Object.keys(r))))
     const columns = allKeys.filter((k) => !HIDDEN_COLUMNS.has(k.toLowerCase()))
 
     const priorityKeys = [
+      'task_date',
+      'title',
+      'assigned_to',
+      'managed_by',
       'work_date',
       'attendance_date',
       'date',
       'holiday_date',
       'period_start',
       'period_end',
+      'gross_amount',
+      'deduction_amount',
+      'net_amount',
       'start_date',
       'end_date',
       'leave_type',
@@ -482,6 +532,19 @@ function StructuredResult({
       'applied_at',
       'requested_at',
       'region',
+      'start_time',
+      'end_time',
+      'performance_score',
+      'component',
+      'mode',
+      'total_amount',
+      'deducted_amount',
+      'remaining_amount',
+      'installment_amount',
+      'installments',
+      'start_month',
+      'next_deduction',
+      'remarks',
     ]
 
     columns.sort((a, b) => {
@@ -591,6 +654,7 @@ function StructuredResult({
   return null
 }
 
+const MIN_THINKING_MS = 900
 function ChatApp({
   employee,
   onLogout,
@@ -608,7 +672,11 @@ function ChatApp({
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
-  async function handleSend(question?: string) {
+  const { firstName, greeting } = getPersonalizedGreeting(
+    employee.full_name,
+  )
+
+    async function handleSend(question?: string) {
     const text = (question ?? input).trim()
     if (!text || isLoading) return
 
@@ -621,10 +689,21 @@ function ChatApp({
     setMessages((previous) => [...previous, userMessage])
     setInput('')
     setIsLoading(true)
+    const startedAt = Date.now()
+
+    // Keep the "thinking" indicator visible for at least MIN_THINKING_MS,
+    // so fast answers (for example leave balance) do not make it flash.
+    async function waitForMinimumThinking() {
+      const remaining = MIN_THINKING_MS - (Date.now() - startedAt)
+      if (remaining > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remaining))
+      }
+    }
 
     try {
       // Use logged in employee's actual employee_code
       const result = await sendChatMessage(text, employee.employee_code)
+      await waitForMinimumThinking()
 
       const reply: Message = {
         id: Date.now() + 1,
@@ -643,6 +722,7 @@ function ChatApp({
 
       setMessages((previous) => [...previous, reply])
     } catch (error) {
+      await waitForMinimumThinking()
       setMessages((previous) => [
         ...previous,
         {
@@ -736,9 +816,13 @@ function ChatApp({
 
           {[
             { icon: Clock3, label: 'Attendance' },
-            { icon: CalendarDays, label: 'Leave & holidays' },
+            { icon: CalendarDays, label: 'Leave & balance' },
+            { icon: Palmtree, label: 'Holidays' },
             { icon: FileClock, label: 'Timesheets' },
+            { icon: Banknote, label: 'Payroll' },
             { icon: House, label: 'Work from home' },
+            { icon: ClipboardList, label: 'Tasks' },
+            { icon: ReceiptText, label: 'Loan Requests' },
           ].map(({ icon: Icon, label }) => (
             <button
               key={label}
@@ -748,11 +832,19 @@ function ChatApp({
                 setInput(
                   label === 'Attendance'
                     ? 'Show my attendance records for this month'
-                    : label === 'Leave & holidays'
-                      ? 'Show my leave request status and upcoming holidays'
-                      : label === 'Timesheets'
-                        ? 'Show my timesheets for this month'
-                        : 'Show my work from home request status',
+                    : label === 'Leave & balance'
+                      ? 'Show my leave request status and leave balance'
+                      : label === 'Holidays'
+                        ? 'Show my upcoming holidays'
+                        : label === 'Timesheets'
+                          ? 'Show my timesheets for this month'
+                          : label === 'Payroll'
+                            ? 'Show my payroll records for this year'
+                            : label === 'Tasks'
+                              ? 'Show my assigned tasks'
+                              : label === 'Loan Requests'
+  ? 'Show my loan applications and status'
+                              : 'Show my work from home request status',
                 )
               }}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white hover:text-slate-900"
@@ -779,7 +871,7 @@ function ChatApp({
                 {employee.full_name}
               </p>
               <p className="truncate text-xs text-slate-500">
-                {employee.employee_code} · {employee.email}
+                {employee.email}
               </p>
             </div>
             <button
@@ -812,7 +904,7 @@ function ChatApp({
                 AI Assistant
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                Logged in as {employee.full_name} ({employee.employee_code})
+                Logged in as {employee.full_name}
               </p>
             </div>
           </div>
@@ -826,26 +918,31 @@ function ChatApp({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 md:px-12">
+          <div
+            className={`flex-1 min-h-0 px-4 sm:px-8 md:px-10 ${
+              messages.length === 0
+                ? 'overflow-hidden flex items-center'
+                : 'overflow-y-auto py-5'
+            }`}
+          >
             <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col">
               {messages.length === 0 ? (
-                <div className="flex flex-1 flex-col justify-center py-8">
-                  <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
-                    <Sparkles size={27} />
+                <div className="flex w-full flex-1 flex-col justify-center py-2">
+                  <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                    <Sparkles size={22} />
                   </div>
-
                   <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
                     Tickora AI
                   </p>
-                  <h1 className="mt-3 text-center text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-                    How can I help you today?
+                  <h1 className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                    {greeting}, {firstName}!
                   </h1>
-                  <p className="mx-auto mt-3 max-w-lg text-center text-sm leading-6 text-slate-500 sm:text-base">
-                    Ask questions about your attendance records, leave requests,
-                    working hours, timesheets, or holidays.
+                  <p className="mx-auto mt-2 max-w-lg text-center text-xs leading-5 text-slate-500 sm:text-sm">
+                    Welcome back. I'm your Tickora AI assistant.
+                    How can I help you with attendance, leave balance,
+                    timesheets, payroll, holidays, tasks, or work from home today?
                   </p>
-
-                  <div className="mt-9 grid gap-3 sm:grid-cols-2">
+                  <div className="mx-auto mt-5 grid w-full max-w-5xl grid-cols-2 gap-2 lg:grid-cols-3">
                     {[
                       {
                         icon: Clock3,
@@ -853,18 +950,20 @@ function ChatApp({
                         description: 'Review your attendance records',
                         question: 'Show my attendance records for October 2026',
                       },
-                      {
-                        icon: Check,
-                        title: 'Attendance summary',
-                        description: 'See your attendance breakdown',
-                        question:
-                          'Give me my attendance summary for this month',
-                      },
+                      // {
+                      //   icon: Check,
+                      //   title: 'Attendance summary',
+                      //   description: 'See your attendance breakdown',
+                      //   question:
+                      //     'Give me my attendance summary for this month',
+                      // },
                       {
                         icon: CalendarDays,
-                        title: 'Leave requests',
-                        description: 'Check your request status',
-                        question: 'Show my leave request status',
+                        title: 'Leave & balance',
+                        description:
+                          'Check leave requests, status, and available leave balance',
+                        question:
+                          'Show my leave request status and leave balance',
                       },
                       {
                         icon: FileClock,
@@ -872,22 +971,48 @@ function ChatApp({
                         description: 'Review your timesheet records',
                         question: 'Show my timesheets for this month',
                       },
+                      {
+                        icon: Banknote,
+                        title: 'Payroll',
+                        description:
+                          'Review salary, deductions, and net pay by pay period',
+                        question: 'Show my payroll records for this year',
+                      },
+                      {
+                        icon: Palmtree,
+                        title: 'Holidays',
+                        description: 'View upcoming holidays and holiday dates',
+                        question: 'Show my upcoming holidays',
+                      },
+                      {
+                        icon: ClipboardList,
+                        title: 'Tasks',
+                        description: 'View your assigned tasks, status, and performance',
+                        question: 'Show my assigned tasks',
+                      },
+                      {
+                        icon: ReceiptText,
+                        title: 'Loan Requests',
+                        description: 'Review loan deductions, installments, and repayment status',
+                        question: 'Show my loan requests',
+                      },
                     ].map(({ icon: Icon, title, description, question }) => (
                       <button
                         key={title}
                         type="button"
                         onClick={() => void handleSend(question)}
                         disabled={isLoading}
-                        className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 disabled:opacity-50"
+                        className="group flex h-[82px] min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-blue-300 hover:bg-blue-50/50 disabled:opacity-50"
                       >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-blue-100 group-hover:text-blue-700">
-                          <Icon size={19} />
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition group-hover:bg-blue-100 group-hover:text-blue-700">
+                          <Icon size={17} />
                         </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold text-slate-800">
+                        <span className="min-w-0 flex-1 overflow-hidden">
+                          <span className="block truncate text-xs font-semibold text-slate-800">
                             {title}
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-slate-500">
+
+                          <span className="mt-1 line-clamp-2 block text-[10px] leading-4 text-slate-500">
                             {description}
                           </span>
                         </span>
@@ -919,9 +1044,12 @@ function ChatApp({
                             : 'rounded-bl-md border border-slate-200 bg-white text-slate-700 shadow-sm'
                         }`}
                       >
-                        <p className="whitespace-pre-wrap break-words">
-                          {message.content}
-                        </p>
+                       {message.content.trim() !== '' && (
+                          < p className="whitespace-pre-wrap break-words">
+                            {message.content}
+                          </p>
+                        )}
+
 
                         {message.role === 'assistant' &&
                           message.data !== undefined && (
@@ -932,7 +1060,7 @@ function ChatApp({
                                 requestedMetric={message.requestedMetric}
                                 showTable={message.showTable}
                               />
-                              {message.data !== null &&
+                              {/* {message.data !== null &&
                                 message.requestedMetric == null && (
                                   <details className="mt-3 border-t border-slate-100 pt-2">
                                     <summary className="cursor-pointer text-xs font-semibold text-blue-600">
@@ -942,7 +1070,7 @@ function ChatApp({
                                       {JSON.stringify(message.data, null, 2)}
                                     </pre>
                                   </details>
-                                )}
+                                )} */}
                             </>
                           )}
                       </div>
@@ -990,7 +1118,7 @@ function ChatApp({
                       void handleSend()
                     }
                   }}
-                  placeholder="Ask Tickora about your attendance, leaves, or timesheets..."
+                  placeholder="Ask Tickora about attendance, leave, timesheets, or payroll..."
                   rows={1}
                   disabled={isLoading}
                   aria-label="Your message"

@@ -22,11 +22,10 @@ export function getApiBaseUrl(): string {
 }
 
 export function getAuthSession(): AuthSession | null {
-  const raw =
-    localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY)
+  const raw = sessionStorage.getItem(SESSION_KEY)
   if (!raw) return null
 
-  try {
+  try {   
     const session = JSON.parse(raw) as AuthSession
     if (!session?.access_token || !session?.employee?.employee_code) {
       clearAuthSession()
@@ -69,9 +68,9 @@ export async function loginWithEmail(
         password,
       }),
     })
-  } catch (err) {
+  } catch {
     throw new Error(
-      'Unable to connect to the Tickora AI backend. Please check if the server is running.',
+      'Unable to connect to the Tickora AI backend. Please check your network and ensure the backend is running.',
     )
   }
 
@@ -84,7 +83,7 @@ export async function loginWithEmail(
       throw new Error('This account is disabled. Please contact your administrator.')
     }
 
-    let detail = 'Unable to sign in. Please try again.'
+    let detail = 'The Tickora AI model is currently unavailable. Please try again later.'
     try {
       const body = (await response.json()) as { detail?: string | unknown }
       if (typeof body.detail === 'string') {
@@ -104,8 +103,6 @@ export async function loginWithEmail(
   if (!session.access_token || !session.employee?.employee_code) {
     throw new Error('The server returned an incomplete login response.')
   }
-
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session))
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
   return session
 }

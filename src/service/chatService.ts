@@ -59,7 +59,7 @@ export async function sendChatMessage(
         }),
       },
     )
-  } catch (err) {
+  } catch {
     throw new Error(
       'Unable to connect to the Tickora AI backend. Please check your network and ensure the backend is running.',
     )
